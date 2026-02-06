@@ -1,0 +1,11 @@
+{
+  "name": "privacy-bridge-tee-standalone",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node privacyBridge.js",
+    "test-bridge": "node testHLBridge.js"
+  },
+  "dependencies": {
+    "ethers": "^6.9.0"
+  }
+}
