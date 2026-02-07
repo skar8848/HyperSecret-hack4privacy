@@ -22,7 +22,7 @@ const docsTree = [
     category: "Protocol",
     content: {
       title: "Getting Started",
-      body: "Aled is an anonymous deposit protocol for Hyperliquid, powered by iExec TEE (Trusted Execution Environment) on Arbitrum Sepolia. It allows users to deposit USDC into a vault on-chain and bridge it to Hyperliquid without anyone being able to link the initial deposit to the final destination address.",
+      body: "{HyperSecret} is an anonymous deposit protocol for Hyperliquid Testnet, powered by iExec TEE (Trusted Execution Environment) on Arbitrum Sepolia. It allows users to deposit USDC into a vault on-chain and bridge it to Hyperliquid Testnet without anyone being able to link the initial deposit to the final destination address.",
       subsections: [
         {
           title: "Prerequisites",
@@ -101,8 +101,8 @@ const docsTree = [
         id: "receive",
         label: "4. Receive on HL",
         content: {
-          title: "Receive on Hyperliquid",
-          body: "The fresh wallet transfers USDC to your destination address on Hyperliquid via EIP-712 signed usdSend. No link to your original deposit exists anywhere on-chain.",
+          title: "Receive on Hyperliquid Testnet",
+          body: "The fresh wallet transfers USDC to your destination address on Hyperliquid Testnet via EIP-712 signed usdSend. No link to your original deposit exists anywhere on-chain.",
         },
       },
     ],
@@ -144,7 +144,8 @@ const docsTree = [
       title: "Network Configuration",
       table: [
         { label: "Chain", value: "Arbitrum Sepolia (Chain ID: 421614)" },
-        { label: "USDC Contract", value: "0xf3c3351d6bd0098eeb33ca8f830faf2a141ea2e1 (6 decimals)" },
+        { label: "USDC Contract", value: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d (6 decimals)" },
+        { label: "USDC2 Contract (HL)", value: "0x1baAbB04529D43a73232B713C0FE471f7c7334d5 (6 decimals)" },
         { label: "HL Bridge", value: "0x08cfc1B6b2dCF36A1480b99353A354AA8AC56f89" },
         { label: "HL API", value: "api.hyperliquid-testnet.xyz" },
         { label: "USDC Faucet", value: "faucet.circle.com (20 USDC / 2h)" },
@@ -162,7 +163,7 @@ const docsTree = [
         {
           title: "Warnings",
           items: [
-            "Minimum deposit on Hyperliquid is 5 USDC. Below this, funds are lost forever.",
+            "Minimum deposit on Hyperliquid Testnet is 5 USDC. Below this, funds are lost forever.",
             "USDC uses 6 decimals, not 18. 5 USDC = 5,000,000 in raw units.",
             "The Hyperliquid bridge takes approximately 60 seconds to process.",
             "The EIP-712 signatureChainId must be 0x66eee (421614 hex) or usdSend fails silently.",

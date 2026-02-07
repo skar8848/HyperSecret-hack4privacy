@@ -12,6 +12,8 @@ import { parseUnits, formatUnits } from "viem";
 import {
   VAULT_ADDRESS,
   USDC_ADDRESS,
+  USDC2_ADDRESS,
+  HL_BRIDGE_ADDRESS,
   IAPP_ADDRESS,
   FALLBACK_API,
   VAULT_ABI,
@@ -62,6 +64,9 @@ export default function BridgeWidget() {
   const chainId = useChainId();
   const isWrongChain = isConnected && chainId !== arbitrumSepolia.id;
 
+  // Bridge mode: "anonymous" (vault+TEE) or "direct" (USDC2 → HL bridge)
+  const [bridgeMode, setBridgeMode] = useState("anonymous");
+
   // UI state
   const [activeTab, setActiveTab] = useState("bridge");
   const [showSettings, setShowSettings] = useState(false);
@@ -87,6 +92,15 @@ export default function BridgeWidget() {
   // Read USDC balance
   const { data: usdcBalance, refetch: refetchBalance } = useReadContract({
     address: USDC_ADDRESS,
+    abi: ERC20_ABI,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address },
+  });
+
+  // Read USDC2 balance (for direct HL deposit)
+  const { data: usdc2Balance, refetch: refetchUsdc2Balance } = useReadContract({
+    address: USDC2_ADDRESS,
     abi: ERC20_ABI,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
@@ -127,6 +141,14 @@ export default function BridgeWidget() {
     reset: resetWithdraw,
   } = useWriteContract();
 
+  // Direct HL deposit tx (USDC2 transfer to bridge)
+  const {
+    writeContract: directTransfer,
+    data: directTxHash,
+    error: directError,
+    reset: resetDirect,
+  } = useWriteContract();
+
   // Wait for receipts
   const { isSuccess: approveConfirmed } = useWaitForTransactionReceipt({
     hash: approveTxHash,
@@ -136,6 +158,9 @@ export default function BridgeWidget() {
   });
   const { isSuccess: withdrawConfirmed } = useWaitForTransactionReceipt({
     hash: withdrawTxHash,
+  });
+  const { isSuccess: directConfirmed } = useWaitForTransactionReceipt({
+    hash: directTxHash,
   });
 
   // After approve confirms → trigger deposit
@@ -192,6 +217,22 @@ export default function BridgeWidget() {
       setWithdrawStep("idle");
     }
   }, [withdrawError]);
+
+  // Direct HL deposit confirmed
+  useEffect(() => {
+    if (directConfirmed && step === "direct-depositing") {
+      setStep("completed");
+      refetchUsdc2Balance();
+    }
+  }, [directConfirmed]);
+
+  useEffect(() => {
+    if (directError && step === "direct-depositing") {
+      setError(directError.message?.slice(0, 150) || "Deposit failed");
+      setFailedAt("direct");
+      setStep("failed");
+    }
+  }, [directError]);
 
   // Submit intent
   const submitIntent = async () => {
@@ -384,7 +425,9 @@ export default function BridgeWidget() {
     setTrackPolling(false);
     resetApprove();
     resetDeposit();
+    resetDirect();
     refetchBalance();
+    refetchUsdc2Balance();
     refetchDeposit();
   };
 
@@ -398,8 +441,27 @@ export default function BridgeWidget() {
     setWithdrawStep("withdrawing");
   };
 
+  // Direct HL deposit: transfer USDC2 to bridge
+  const handleDirectDeposit = () => {
+    setError(null);
+    setFailedAt(null);
+    resetDirect();
+    const amountWei = parseUnits(amount, 6);
+    directTransfer({
+      address: USDC2_ADDRESS,
+      abi: ERC20_ABI,
+      functionName: "transfer",
+      args: [HL_BRIDGE_ADDRESS, amountWei],
+    });
+    setStep("direct-depositing");
+  };
+
   const handleMaxAmount = () => {
-    if (usdcBalance) setAmount(formatUnits(usdcBalance, 6));
+    if (bridgeMode === "direct") {
+      if (usdc2Balance) setAmount(formatUnits(usdc2Balance, 6));
+    } else {
+      if (usdcBalance) setAmount(formatUnits(usdcBalance, 6));
+    }
   };
 
   const handleTrackSubmit = () => {
@@ -424,6 +486,27 @@ export default function BridgeWidget() {
       return { text: "Enter an amount", disabled: true, variant: "secondary" };
     if (parseFloat(amount) < 5)
       return { text: "Minimum 5 USDC", disabled: true, variant: "secondary" };
+
+    if (bridgeMode === "direct") {
+      // Direct HL deposit — no recipient needed
+      if (
+        usdc2Balance !== undefined &&
+        parseUnits(amount || "0", 6) > usdc2Balance
+      )
+        return {
+          text: "Insufficient USDC2 balance",
+          disabled: true,
+          variant: "secondary",
+        };
+      return {
+        text: "Deposit to Hyperliquid",
+        disabled: false,
+        variant: "primary",
+        onClick: handleDirectDeposit,
+      };
+    }
+
+    // Anonymous mode
     if (!hlDestination || !hlDestination.startsWith("0x"))
       return {
         text: "Enter destination address",
@@ -448,7 +531,7 @@ export default function BridgeWidget() {
   };
 
   const buttonConfig = getButtonConfig();
-  const showRoute = buttonConfig.text === "Bridge USDC";
+  const showRoute = buttonConfig.text === "Bridge USDC" || buttonConfig.text === "Deposit to Hyperliquid";
 
   // Step progress
   const getStepStatus = (stepKey) => {
@@ -477,9 +560,10 @@ export default function BridgeWidget() {
   };
 
   // Formatted values
+  const activeBalance = bridgeMode === "direct" ? usdc2Balance : usdcBalance;
   const formattedBalance =
-    usdcBalance !== undefined
-      ? parseFloat(formatUnits(usdcBalance, 6)).toFixed(2)
+    activeBalance !== undefined
+      ? parseFloat(formatUnits(activeBalance, 6)).toFixed(2)
       : "...";
 
   const formattedDeposit =
@@ -590,7 +674,27 @@ export default function BridgeWidget() {
       {/* ===== BRIDGE TAB ===== */}
       {activeTab === "bridge" && (
         <div className="bridge-body">
-          {formattedDeposit && step === "input" && (
+          {/* Mode toggle: Anonymous vs Direct */}
+          {step === "input" && (
+            <div className="bridge-mode-toggle">
+              <button
+                className={`bridge-mode-toggle-btn ${bridgeMode === "anonymous" ? "active" : ""}`}
+                onClick={() => { setBridgeMode("anonymous"); setAmount(""); }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+                Anonymous
+              </button>
+              <button
+                className={`bridge-mode-toggle-btn ${bridgeMode === "direct" ? "active" : ""}`}
+                onClick={() => { setBridgeMode("direct"); setAmount(""); }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/></svg>
+                Direct HL Deposit
+              </button>
+            </div>
+          )}
+
+          {formattedDeposit && step === "input" && bridgeMode === "anonymous" && (
             <div className="bridge-deposit-banner">
               <div className="bridge-deposit-banner-left">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
@@ -650,7 +754,7 @@ export default function BridgeWidget() {
                       <div className="bridge-badge-chain"><ArbitrumLogo size={18} /></div>
                     </div>
                     <div className="bridge-card-text">
-                      <span className="bridge-card-title">USDC</span>
+                      <span className="bridge-card-title">{bridgeMode === "direct" ? "USDC2" : "USDC"}</span>
                       <span className="bridge-card-subtitle">
                         on Arbitrum Sepolia
                       </span>
@@ -680,7 +784,7 @@ export default function BridgeWidget() {
                     <div className="bridge-card-text">
                       <span className="bridge-card-title">USDC</span>
                       <span className="bridge-card-subtitle">
-                        on Hyperliquid
+                        on Hyperliquid Testnet
                       </span>
                     </div>
                   </div>
@@ -718,7 +822,7 @@ export default function BridgeWidget() {
                       <span className="bridge-send-balance">
                         {isConnected ? (
                           <>
-                            {formattedBalance} USDC
+                            {formattedBalance} {bridgeMode === "direct" ? "USDC2" : "USDC"}
                             <button
                               className="bridge-send-max"
                               onClick={handleMaxAmount}
@@ -745,8 +849,8 @@ export default function BridgeWidget() {
                         <div className="bridge-badge-chain"><HyperliquidLogo size={14} /></div>
                       </div>
                       <div className="bridge-route-receive-info">
-                        <span className="bridge-route-receive-amount">{amount} USDC</span>
-                        <span className="bridge-route-receive-chain">on Hyperliquid</span>
+                        <span className="bridge-route-receive-amount">{amount} {bridgeMode === "direct" ? "USDC2" : "USDC"}</span>
+                        <span className="bridge-route-receive-chain">on Hyperliquid Testnet</span>
                       </div>
                     </div>
                     <span className="bridge-route-receive-tag">Receive</span>
@@ -758,14 +862,14 @@ export default function BridgeWidget() {
                     <div className="bridge-route-path-header">
                       <div className="bridge-route-path-left">
                         <span className="bridge-route-path-dot" />
-                        <span className="bridge-route-path-name">{"{"}HyperSecret{"}"}</span>
+                        <span className="bridge-route-path-name">{bridgeMode === "direct" ? "HL Bridge" : `{HyperSecret}`}</span>
                       </div>
-                      <span className="bridge-route-path-tag">Best Route</span>
+                      <span className="bridge-route-path-tag">{bridgeMode === "direct" ? "Direct" : "Best Route"}</span>
                     </div>
                     <div className="bridge-route-path-meta">
                       <span className="bridge-route-meta-item">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
-                        ~2 min
+                        {bridgeMode === "direct" ? "~1 min" : "~2 min"}
                       </span>
                       <span className="bridge-route-meta-sep" />
                       <span className="bridge-route-meta-item">
@@ -775,7 +879,7 @@ export default function BridgeWidget() {
                       <span className="bridge-route-meta-sep" />
                       <span className="bridge-route-meta-item">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
-                        {mode === "iexec" ? "iExec SGX" : "TEE Enclave"}
+                        {bridgeMode === "direct" ? "HL Bridge" : mode === "iexec" ? "iExec SGX" : "TEE Enclave"}
                       </span>
                     </div>
                   </div>
@@ -791,52 +895,86 @@ export default function BridgeWidget() {
                 >
                   {buttonConfig.text}
                 </button>
-                <button
-                  className={`bridge-wallet-btn ${showRecipient ? "active" : ""}`}
-                  onClick={() => setShowRecipient(!showRecipient)}
-                  title="Recipient address"
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M18 4H6C3.79 4 2 5.79 2 8v8c0 2.21 1.79 4 4 4h12c2.21 0 4-1.79 4-4V8c0-2.21-1.79-4-4-4m-1.86 9.77c-.24.2-.57.28-.88.2L4.15 11.25C4.45 10.52 5.16 10 6 10h12c.67 0 1.26.34 1.63.84zM6 6h12c1.1 0 2 .9 2 2v.55c-.59-.34-1.27-.55-2-.55H6c-.73 0-1.41.21-2 .55V8c0-1.1.9-2 2-2" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* RECIPIENT */}
-              <div className={`bridge-recipient-area ${showRecipient ? "open" : ""}`}>
-                <div className="bridge-recipient-card">
-                  <div className="bridge-recipient-header">
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                    >
+                {bridgeMode === "anonymous" && (
+                  <button
+                    className={`bridge-wallet-btn ${showRecipient ? "active" : ""}`}
+                    onClick={() => setShowRecipient(!showRecipient)}
+                    title="Recipient address"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M18 4H6C3.79 4 2 5.79 2 8v8c0 2.21 1.79 4 4 4h12c2.21 0 4-1.79 4-4V8c0-2.21-1.79-4-4-4m-1.86 9.77c-.24.2-.57.28-.88.2L4.15 11.25C4.45 10.52 5.16 10 6 10h12c.67 0 1.26.34 1.63.84zM6 6h12c1.1 0 2 .9 2 2v.55c-.59-.34-1.27-.55-2-.55H6c-.73 0-1.41.21-2 .55V8c0-1.1.9-2 2-2" />
                     </svg>
-                    <span className="bridge-recipient-title">
-                      Recipient on Hyperliquid
-                    </span>
-                  </div>
-                  <input
-                    className="bridge-recipient-input"
-                    type="text"
-                    placeholder="0x..."
-                    value={hlDestination}
-                    onChange={(e) => setHlDestination(e.target.value)}
-                    tabIndex={showRecipient ? 0 : -1}
-                  />
-                </div>
+                  </button>
+                )}
               </div>
+
+              {/* RECIPIENT (anonymous mode only) */}
+              {bridgeMode === "anonymous" && (
+                <div className={`bridge-recipient-area ${showRecipient ? "open" : ""}`}>
+                  <div className="bridge-recipient-card">
+                    <div className="bridge-recipient-header">
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path d="M18 4H6C3.79 4 2 5.79 2 8v8c0 2.21 1.79 4 4 4h12c2.21 0 4-1.79 4-4V8c0-2.21-1.79-4-4-4m-1.86 9.77c-.24.2-.57.28-.88.2L4.15 11.25C4.45 10.52 5.16 10 6 10h12c.67 0 1.26.34 1.63.84zM6 6h12c1.1 0 2 .9 2 2v.55c-.59-.34-1.27-.55-2-.55H6c-.73 0-1.41.21-2 .55V8c0-1.1.9-2 2-2" />
+                      </svg>
+                      <span className="bridge-recipient-title">
+                        Recipient on Hyperliquid Testnet
+                      </span>
+                    </div>
+                    <input
+                      className="bridge-recipient-input"
+                      type="text"
+                      placeholder="0x..."
+                      value={hlDestination}
+                      onChange={(e) => setHlDestination(e.target.value)}
+                      tabIndex={showRecipient ? 0 : -1}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Direct deposit info */}
+              {bridgeMode === "direct" && (
+                <div className="bridge-direct-info">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                  <span>Deposits to your connected wallet address on Hyperliquid Testnet testnet. Credits in ~1 min.</span>
+                </div>
+              )}
 
             </>
           ) : step === "completed" ? (
             <div className="bridge-result">
               <div className="bridge-result-icon success">&#10003;</div>
-              <div className="bridge-result-title">Transfer Complete!</div>
-              <div className="bridge-result-subtitle">
-                {amount} USDC sent anonymously
+              <div className="bridge-result-title">
+                {bridgeMode === "direct" ? "Deposit Sent!" : "Transfer Complete!"}
               </div>
+              <div className="bridge-result-subtitle">
+                {bridgeMode === "direct"
+                  ? `${amount} USDC2 sent to HL bridge. Credits in ~1 min.`
+                  : `${amount} USDC sent anonymously`}
+              </div>
+
+              {/* Direct deposit tx link */}
+              {bridgeMode === "direct" && directTxHash && (
+                <div className="bridge-result-details">
+                  <div className="bridge-result-row">
+                    <span className="label">Bridge Tx</span>
+                    <span className="value">
+                      <a
+                        href={`https://sepolia.arbiscan.io/tx/${directTxHash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {directTxHash.slice(0, 10)}...{directTxHash.slice(-6)}
+                      </a>
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {trackData?.result && (
                 <div className="bridge-result-details">
@@ -927,30 +1065,41 @@ export default function BridgeWidget() {
           ) : (
             <div className="bridge-progress">
               <div className="bridge-progress-title">
-                Bridging {amount} USDC
+                {bridgeMode === "direct"
+                  ? `Depositing ${amount} USDC2 to Hyperliquid`
+                  : `Bridging ${amount} USDC`}
               </div>
               <div className="bridge-steps">
-                {STEPS.map((s) => {
-                  const status = getStepStatus(s.key);
-                  return (
-                    <div
-                      key={s.key}
-                      className={`bridge-step ${status === "active" ? "active" : ""}`}
-                    >
-                      <div className={`bridge-step-icon ${status}`}>
-                        {status === "completed" && <span>&#10003;</span>}
-                        {status === "active" && <div className="step-spinner" />}
-                        {status === "pending" && (
-                          <span>
-                            {STEPS.findIndex((x) => x.key === s.key) + 1}
-                          </span>
-                        )}
-                        {status === "failed" && <span>!</span>}
-                      </div>
-                      <span className="bridge-step-text">{s.label}</span>
+                {bridgeMode === "direct" ? (
+                  <div className="bridge-step active">
+                    <div className="bridge-step-icon active">
+                      <div className="step-spinner" />
                     </div>
-                  );
-                })}
+                    <span className="bridge-step-text">Sending USDC2 to HL Bridge</span>
+                  </div>
+                ) : (
+                  STEPS.map((s) => {
+                    const status = getStepStatus(s.key);
+                    return (
+                      <div
+                        key={s.key}
+                        className={`bridge-step ${status === "active" ? "active" : ""}`}
+                      >
+                        <div className={`bridge-step-icon ${status}`}>
+                          {status === "completed" && <span>&#10003;</span>}
+                          {status === "active" && <div className="step-spinner" />}
+                          {status === "pending" && (
+                            <span>
+                              {STEPS.findIndex((x) => x.key === s.key) + 1}
+                            </span>
+                          )}
+                          {status === "failed" && <span>!</span>}
+                        </div>
+                        <span className="bridge-step-text">{s.label}</span>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           )}
