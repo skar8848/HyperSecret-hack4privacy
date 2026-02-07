@@ -40,6 +40,27 @@ flowchart LR
 
 **Privacy guarantee**: An on-chain observer sees `Vault -> FreshWallet -> Bridge -> Destination` but **cannot link** the original depositor to the final recipient. The mapping is encrypted inside the TEE enclave.
 
+## Step-by-Step Flow
+
+```
+User (Arbitrum Sepolia)            iExec TEE (SGX Enclave)               Hyperliquid Testnet
+┌──────────────────────┐     ┌─────────────────────────────┐     ┌───────────────────────┐
+│                      │     │                             │     │                       │
+│  1. Approve USDC     │     │  3. Decrypt intent          │     │                       │
+│  2. Deposit to Vault │────>│  4. Generate fresh wallet   │     │                       │
+│     + submit intent  │     │  5. Vault → redistribute()  │     │                       │
+│     (encrypted via   │     │  6. Fund fresh wallet ETH   │     │                       │
+│      iExec SDK)      │     │  7. Bridge USDC2 → HL       │────>│  8. USDC credited     │
+│                      │     │  8. usdSend → destination   │────>│     to user address   │
+│                      │     │                             │     │                       │
+└──────────────────────┘     └─────────────────────────────┘     └───────────────────────┘
+
+On-chain trace:  Vault ──> 0xRaNdOm ──> HL Bridge    (no link to destination)
+On Hyperliquid:  0xRaNdOm ──> User's HL Address       (separate chain, unlinkable)
+```
+
+The fresh wallet is generated inside the TEE enclave and never reused. Each transaction uses a different random wallet, making it impossible to correlate deposits with destinations.
+
 ## Architecture
 
 | Component | Stack |
@@ -54,7 +75,7 @@ flowchart LR
 | Contract | Address |
 |----------|---------|
 | PrivacyVault (USDC2) | `0xa285D070351aEAF4865923e4B88C51E63283aD84` |
-| iApp (iExec TEE) | `0x00944931c04C52159F9060dA4C7F0caa73c418Af` |
+| iApp (iExec TEE) | `0xB9c2c9671D16122753f0D1c0f62388db790F8107` |
 | TEE Wallet | `0xf308D795A3635d443A99B28438936ea9036dD6b5` |
 | USDC2 (HL Token) | `0x1baAbB04529D43a73232B713C0FE471f7c7334d5` |
 | HL Bridge | `0x08cfc1B6b2dCF36A1480b99353A354AA8AC56f89` |

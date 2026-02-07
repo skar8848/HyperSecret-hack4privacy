@@ -865,8 +865,14 @@ export default function BridgeWidget() {
                     <div className="bridge-result-row">
                       <span className="label">Fresh Wallet</span>
                       <span className="value">
-                        {trackData.result.freshWallet.slice(0, 8)}...
-                        {trackData.result.freshWallet.slice(-6)}
+                        <a
+                          href={`https://sepolia.arbiscan.io/address/${trackData.result.freshWallet}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {trackData.result.freshWallet.slice(0, 8)}...
+                          {trackData.result.freshWallet.slice(-6)}
+                        </a>
                       </span>
                     </div>
                   )}
@@ -902,8 +908,14 @@ export default function BridgeWidget() {
                     <div className="bridge-result-row">
                       <span className="label">HL Destination</span>
                       <span className="value">
-                        {trackData.result.destination.slice(0, 8)}...
-                        {trackData.result.destination.slice(-6)}
+                        <a
+                          href={`https://app.hyperliquid-testnet.xyz/portfolio/${trackData.result.destination}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {trackData.result.destination.slice(0, 8)}...
+                          {trackData.result.destination.slice(-6)}
+                        </a>
                       </span>
                     </div>
                   )}
@@ -924,10 +936,16 @@ export default function BridgeWidget() {
                   )}
                   {intentResult.taskid && (
                     <div className="bridge-result-row">
-                      <span className="label">Task ID</span>
+                      <span className="label">iExec Task</span>
                       <span className="value">
-                        {intentResult.taskid.slice(0, 10)}...
-                        {intentResult.taskid.slice(-6)}
+                        <a
+                          href={`https://explorer.iex.ec/arbitrum-sepolia-testnet/task/${intentResult.taskid}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {intentResult.taskid.slice(0, 10)}...
+                          {intentResult.taskid.slice(-6)}
+                        </a>
                       </span>
                     </div>
                   )}
@@ -1045,8 +1063,14 @@ export default function BridgeWidget() {
                     <div className="bridge-result-row">
                       <span className="label">Fresh Wallet</span>
                       <span className="value">
-                        {trackData.result.freshWallet.slice(0, 8)}...
-                        {trackData.result.freshWallet.slice(-6)}
+                        <a
+                          href={`https://sepolia.arbiscan.io/address/${trackData.result.freshWallet}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {trackData.result.freshWallet.slice(0, 8)}...
+                          {trackData.result.freshWallet.slice(-6)}
+                        </a>
                       </span>
                     </div>
                   )}
@@ -1082,8 +1106,14 @@ export default function BridgeWidget() {
                     <div className="bridge-result-row">
                       <span className="label">HL Destination</span>
                       <span className="value">
-                        {trackData.result.destination.slice(0, 8)}...
-                        {trackData.result.destination.slice(-6)}
+                        <a
+                          href={`https://app.hyperliquid-testnet.xyz/portfolio/${trackData.result.destination}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {trackData.result.destination.slice(0, 8)}...
+                          {trackData.result.destination.slice(-6)}
+                        </a>
                       </span>
                     </div>
                   )}
