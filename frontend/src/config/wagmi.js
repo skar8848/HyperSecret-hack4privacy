@@ -5,6 +5,7 @@ import { injected } from "wagmi/connectors";
 export const config = createConfig({
   chains: [arbitrumSepolia],
   connectors: [injected()],
+  multiInjectedProviderDiscovery: true,
   transports: {
     [arbitrumSepolia.id]: http("https://sepolia-rollup.arbitrum.io/rpc"),
   },
