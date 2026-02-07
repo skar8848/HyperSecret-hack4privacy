@@ -1,8 +1,6 @@
-// Update these after deployment
-export const VAULT_ADDRESS =
-  import.meta.env.VITE_VAULT_ADDRESS || "0x0000000000000000000000000000000000000000";
-export const IAPP_ADDRESS =
-  import.meta.env.VITE_IAPP_ADDRESS || "0x0000000000000000000000000000000000000000";
+// Deployed addresses (Arbitrum Sepolia)
+export const VAULT_ADDRESS = "0xa285D070351aEAF4865923e4B88C51E63283aD84";
+export const IAPP_ADDRESS = "0x00944931c04C52159F9060dA4C7F0caa73c418Af";
 export const FALLBACK_API =
   import.meta.env.VITE_FALLBACK_API || "http://localhost:3001";
 
