@@ -58,7 +58,12 @@
   font-size: 28px;
   font-weight: 800;
   letter-spacing: -0.5px;
+  color: #f0f0f0;
+}
+
+.app-logo-brace {
   color: #B0F2B6;
+  font-weight: 800;
 }
 
 .app-nav {
