@@ -219,11 +219,13 @@ export default function BridgeWidget() {
           vaultAddress: VAULT_ADDRESS,
         });
 
-        // Push secret (force update if it already exists)
-        const secretExists = await iexec.secrets.checkRequesterSecretExists("1");
-        await iexec.secrets.pushRequesterSecret("1", secretValue, {
-          forceUpdate: secretExists,
-        });
+        // Push secret (skip if already exists — requester secrets are immutable)
+        try {
+          await iexec.secrets.pushRequesterSecret("1", secretValue);
+        } catch (e) {
+          if (!e.message?.includes("already exists")) throw e;
+          console.warn("Secret already exists, reusing existing secret");
+        }
 
         const { orders: appOrders } =
           await iexec.orderbook.fetchAppOrderbook(IAPP_ADDRESS);
