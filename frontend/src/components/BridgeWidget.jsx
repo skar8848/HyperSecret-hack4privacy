@@ -340,8 +340,9 @@ export default function BridgeWidget() {
         }
       }
     } catch (err) {
-      setTrackError(err.message);
-      setTrackPolling(false);
+      console.warn("Poll error (will retry):", err.message);
+      // Don't stop polling on temporary errors — task may not be indexed yet
+      setTrackData((prev) => prev || { status: "Waiting for task...", completed: false });
     }
   }, [trackId, trackMode]);
 
@@ -751,7 +752,7 @@ export default function BridgeWidget() {
                     <div className="bridge-route-path-header">
                       <div className="bridge-route-path-left">
                         <span className="bridge-route-path-dot" />
-                        <span className="bridge-route-path-name">Aled Privacy Bridge</span>
+                        <span className="bridge-route-path-name">{"{"}HyperSecret{"}"}</span>
                       </div>
                       <span className="bridge-route-path-tag">Best Route</span>
                     </div>
