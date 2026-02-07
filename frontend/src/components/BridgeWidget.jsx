@@ -128,13 +128,13 @@ export default function BridgeWidget() {
   } = useWriteContract();
 
   // Wait for receipts
-  const { isSuccess: approveConfirmed } = useWaitForTransactionReceipt({
+  const { isSuccess: approveConfirmed, isError: approveReverted } = useWaitForTransactionReceipt({
     hash: approveTxHash,
   });
-  const { isSuccess: depositConfirmed } = useWaitForTransactionReceipt({
+  const { isSuccess: depositConfirmed, isError: depositReverted } = useWaitForTransactionReceipt({
     hash: depositTxHash,
   });
-  const { isSuccess: withdrawConfirmed } = useWaitForTransactionReceipt({
+  const { isSuccess: withdrawConfirmed, isError: withdrawReverted } = useWaitForTransactionReceipt({
     hash: withdrawTxHash,
   });
   // After approve confirms → trigger deposit
@@ -176,6 +176,23 @@ export default function BridgeWidget() {
     }
   }, [depositError]);
 
+  // Handle on-chain reverts (tx mined but failed)
+  useEffect(() => {
+    if (approveReverted && step === "approving") {
+      setError("Approve transaction reverted on-chain");
+      setFailedAt("approve");
+      setStep("failed");
+    }
+  }, [approveReverted]);
+
+  useEffect(() => {
+    if (depositReverted && step === "depositing") {
+      setError("Deposit transaction reverted on-chain. Check that the vault address and token are correct.");
+      setFailedAt("deposit");
+      setStep("failed");
+    }
+  }, [depositReverted]);
+
   // After withdraw confirms
   useEffect(() => {
     if (withdrawConfirmed && withdrawStep === "withdrawing") {
@@ -187,10 +204,10 @@ export default function BridgeWidget() {
   }, [withdrawConfirmed]);
 
   useEffect(() => {
-    if (withdrawError && withdrawStep === "withdrawing") {
+    if ((withdrawError || withdrawReverted) && withdrawStep === "withdrawing") {
       setWithdrawStep("idle");
     }
-  }, [withdrawError]);
+  }, [withdrawError, withdrawReverted]);
 
   // Submit intent
   const submitIntent = async () => {
