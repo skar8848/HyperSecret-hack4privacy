@@ -6,7 +6,7 @@
  * Runs inside an SGX/TDX enclave via iExec.
  *
  * Inputs:
- *   - IEXEC_REQUESTER_SECRET_1: JSON { hlDestination, amount, vaultAddress }
+ *   - IEXEC_REQUESTER_SECRET_1: JSON { destination, amount, vaultAddress }
  *   - IEXEC_APP_DEVELOPER_SECRET: TEE wallet private key
  *
  * Output:
@@ -20,9 +20,7 @@ const { ethers } = require("ethers");
 
 // --- Config ---
 const ARB_SEPOLIA_RPC = "https://sepolia-rollup.arbitrum.io/rpc";
-const USDC_ADDRESS = "0xf3c3351d6bd0098eeb33ca8f830faf2a141ea2e1";
-const HL_BRIDGE_ADDRESS = "0x08cfc1B6b2dCF36A1480b99353A354AA8AC56f89";
-const HL_TESTNET_API = "https://api.hyperliquid-testnet.xyz";
+const USDC_ADDRESS = "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d";
 
 const VAULT_ABI = [
   "function redistribute(address[] recipients, uint256[] amounts) external",
@@ -32,80 +30,6 @@ const ERC20_ABI = [
   "function transfer(address to, uint256 amount) external returns (bool)",
   "function balanceOf(address account) external view returns (uint256)",
 ];
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function hlUsdSend(wallet, destination, amountUsd) {
-  const timestamp = Date.now();
-
-  const domain = {
-    name: "HyperliquidSignTransaction",
-    version: "1",
-    chainId: 421614,
-    verifyingContract: "0x0000000000000000000000000000000000000000",
-  };
-
-  const types = {
-    "HyperliquidTransaction:UsdSend": [
-      { name: "hyperliquidChain", type: "string" },
-      { name: "destination", type: "string" },
-      { name: "amount", type: "string" },
-      { name: "time", type: "uint64" },
-    ],
-  };
-
-  const message = {
-    hyperliquidChain: "Testnet",
-    destination: destination,
-    amount: amountUsd.toString(),
-    time: timestamp,
-  };
-
-  const signature = await wallet.signTypedData(domain, types, message);
-  const { r, s, v } = ethers.Signature.from(signature);
-
-  const payload = {
-    action: {
-      type: "usdSend",
-      hyperliquidChain: "Testnet",
-      signatureChainId: "0x66eee",
-      destination: destination,
-      amount: amountUsd.toString(),
-      time: timestamp,
-    },
-    nonce: timestamp,
-    signature: { r, s, v },
-  };
-
-  const response = await fetch(`${HL_TESTNET_API}/exchange`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  return await response.json();
-}
-
-async function waitForHLCredit(address, expectedAmount, maxRetries = 30) {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const response = await fetch(`${HL_TESTNET_API}/info`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "clearinghouseState", user: address }),
-      });
-      const data = await response.json();
-      const balance = parseFloat(data?.marginSummary?.accountValue || "0");
-      if (balance >= expectedAmount) return true;
-    } catch (e) {
-      // retry
-    }
-    await sleep(5000);
-  }
-  throw new Error("HL bridge credit timeout");
-}
 
 async function main() {
   const iexecOut = process.env.IEXEC_OUT || "/tmp/iexec_out";
@@ -119,16 +43,17 @@ async function main() {
   if (!teePrivateKey) throw new Error("No app developer secret (IEXEC_APP_DEVELOPER_SECRET)");
 
   const intent = JSON.parse(requesterSecret);
-  const { hlDestination, amount, vaultAddress } = intent;
+  const { destination, amount, vaultAddress } = intent;
 
-  if (!hlDestination || !amount || !vaultAddress) {
-    throw new Error("Intent must contain hlDestination, amount, vaultAddress");
+  if (!destination || !amount || !vaultAddress) {
+    throw new Error("Intent must contain destination, amount, vaultAddress");
   }
 
-  console.log(`Processing: ${amount} USDC -> HL ${hlDestination}`);
+  console.log(`Processing: ${amount} USDC -> ${destination}`);
 
   const provider = new ethers.JsonRpcProvider(ARB_SEPOLIA_RPC);
   const teeWallet = new ethers.Wallet(teePrivateKey, provider);
+  const normalizedDest = ethers.getAddress(destination);
 
   // 1. Generate fresh wallet
   const freshWallet = ethers.Wallet.createRandom().connect(provider);
@@ -141,7 +66,7 @@ async function main() {
   await tx1.wait();
   console.log(`Redistribute tx: ${tx1.hash}`);
 
-  // 3. Fund fresh wallet with ETH
+  // 3. Fund fresh wallet with ETH for gas
   const tx2 = await teeWallet.sendTransaction({
     to: freshWallet.address,
     value: ethers.parseEther("0.001"),
@@ -149,18 +74,11 @@ async function main() {
   await tx2.wait();
   console.log(`ETH funding tx: ${tx2.hash}`);
 
-  // 4. Bridge USDC to HL
+  // 4. Transfer USDC from fresh wallet to destination (anonymous transfer)
   const usdc = new ethers.Contract(USDC_ADDRESS, ERC20_ABI, freshWallet);
-  const tx3 = await usdc.transfer(HL_BRIDGE_ADDRESS, amountWei);
+  const tx3 = await usdc.transfer(normalizedDest, amountWei);
   await tx3.wait();
-  console.log(`Bridge tx: ${tx3.hash}`);
-
-  // 5. Wait for HL credit
-  await waitForHLCredit(freshWallet.address, amount);
-
-  // 6. Transfer on HL to destination
-  const hlResult = await hlUsdSend(freshWallet, hlDestination, amount);
-  console.log(`HL usdSend:`, JSON.stringify(hlResult));
+  console.log(`Transfer tx: ${tx3.hash}`);
 
   // Write result
   const result = {
@@ -168,8 +86,9 @@ async function main() {
     freshWallet: freshWallet.address,
     redistributeTx: tx1.hash,
     ethFundingTx: tx2.hash,
-    bridgeTx: tx3.hash,
-    hlTransfer: hlResult,
+    transferTx: tx3.hash,
+    destination: normalizedDest,
+    amount: amount,
     timestamp: new Date().toISOString(),
   };
 

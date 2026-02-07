@@ -51,7 +51,7 @@ const STEPS = [
   { key: "approve", label: "Approve USDC" },
   { key: "deposit", label: "Deposit to Vault" },
   { key: "intent", label: "Submit Intent to TEE" },
-  { key: "bridge", label: "Bridge to Hyperliquid" },
+  { key: "bridge", label: "Anonymous Transfer" },
 ];
 
 export default function BridgeWidget() {
@@ -64,7 +64,7 @@ export default function BridgeWidget() {
   const [showRecipient, setShowRecipient] = useState(true);
   const [amount, setAmount] = useState("");
   const [hlDestination, setHlDestination] = useState("");
-  const [mode, setMode] = useState("fallback");
+  const [mode, setMode] = useState("iexec");
   const [routePriority, setRoutePriority] = useState("fastest");
   const [gasPrice, setGasPrice] = useState(50);
   const [step, setStep] = useState("input");
@@ -75,7 +75,7 @@ export default function BridgeWidget() {
 
   // Status tracking
   const [trackId, setTrackId] = useState("");
-  const [trackMode, setTrackMode] = useState("fallback");
+  const [trackMode, setTrackMode] = useState("iexec");
   const [trackPolling, setTrackPolling] = useState(false);
   const [trackData, setTrackData] = useState(null);
   const [trackError, setTrackError] = useState(null);
@@ -214,7 +214,7 @@ export default function BridgeWidget() {
         const iexec = new IExec({ ethProvider: window.ethereum });
 
         const secretValue = JSON.stringify({
-          hlDestination,
+          destination: hlDestination,
           amount: parseFloat(amount),
           vaultAddress: VAULT_ADDRESS,
         });
@@ -293,16 +293,44 @@ export default function BridgeWidget() {
         const iexec = new IExec({ ethProvider: window.ethereum });
         const task = await iexec.task.show(trackId);
 
-        setTrackData({
-          status: IEXEC_STATUS_MAP[task.status] || `UNKNOWN(${task.status})`,
-          raw: task,
-          completed: task.status === 3,
-        });
+        const statusText = IEXEC_STATUS_MAP[task.status] || `UNKNOWN(${task.status})`;
 
-        if (task.status === 3 || task.status === 4) {
+        if (task.status === 3) {
+          // Task completed - fetch result from IPFS
+          let result = null;
+          try {
+            const response = await iexec.task.fetchResults(trackId);
+            const blob = await response.blob();
+            const JSZip = (await import("jszip")).default;
+            const zip = await JSZip.loadAsync(blob);
+            const resultFile = zip.file("result.json");
+            if (resultFile) {
+              const text = await resultFile.async("text");
+              result = JSON.parse(text);
+            }
+          } catch (e) {
+            console.warn("Could not fetch iExec result:", e);
+          }
+
+          setTrackData({
+            status: statusText,
+            raw: task,
+            result,
+            completed: true,
+          });
           setTrackPolling(false);
-          setStep(task.status === 3 ? "completed" : "failed");
-          if (task.status === 4) setError("TEE task failed");
+          setStep("completed");
+        } else if (task.status === 4) {
+          setTrackData({ status: statusText, raw: task, completed: false });
+          setTrackPolling(false);
+          setStep("failed");
+          setError("TEE task failed");
+        } else {
+          setTrackData({
+            status: statusText,
+            raw: task,
+            completed: false,
+          });
         }
       }
     } catch (err) {
@@ -792,9 +820,9 @@ export default function BridgeWidget() {
           ) : step === "completed" ? (
             <div className="bridge-result">
               <div className="bridge-result-icon success">&#10003;</div>
-              <div className="bridge-result-title">Bridge Complete!</div>
+              <div className="bridge-result-title">Transfer Complete!</div>
               <div className="bridge-result-subtitle">
-                {amount} USDC sent to Hyperliquid
+                {amount} USDC sent anonymously
               </div>
 
               {trackData?.result && (
@@ -822,16 +850,16 @@ export default function BridgeWidget() {
                       </span>
                     </div>
                   )}
-                  {trackData.result.bridgeTx && (
+                  {trackData.result.transferTx && (
                     <div className="bridge-result-row">
-                      <span className="label">Bridge Tx</span>
+                      <span className="label">Transfer Tx</span>
                       <span className="value">
                         <a
-                          href={`https://sepolia.arbiscan.io/tx/${trackData.result.bridgeTx}`}
+                          href={`https://sepolia.arbiscan.io/tx/${trackData.result.transferTx}`}
                           target="_blank"
                           rel="noreferrer"
                         >
-                          {trackData.result.bridgeTx.slice(0, 10)}...
+                          {trackData.result.transferTx.slice(0, 10)}...
                         </a>
                       </span>
                     </div>
@@ -993,28 +1021,26 @@ export default function BridgeWidget() {
                       </span>
                     </div>
                   )}
-                  {trackData.result.bridgeTx && (
+                  {trackData.result.transferTx && (
                     <div className="bridge-result-row">
-                      <span className="label">Bridge Tx</span>
+                      <span className="label">Transfer Tx</span>
                       <span className="value">
                         <a
-                          href={`https://sepolia.arbiscan.io/tx/${trackData.result.bridgeTx}`}
+                          href={`https://sepolia.arbiscan.io/tx/${trackData.result.transferTx}`}
                           target="_blank"
                           rel="noreferrer"
                         >
-                          {trackData.result.bridgeTx.slice(0, 10)}...
+                          {trackData.result.transferTx.slice(0, 10)}...
                         </a>
                       </span>
                     </div>
                   )}
-                  {trackData.result.hlTransfer && (
+                  {trackData.result.destination && (
                     <div className="bridge-result-row">
-                      <span className="label">HL Transfer</span>
+                      <span className="label">Destination</span>
                       <span className="value">
-                        {JSON.stringify(trackData.result.hlTransfer).slice(
-                          0,
-                          40
-                        )}
+                        {trackData.result.destination.slice(0, 8)}...
+                        {trackData.result.destination.slice(-6)}
                       </span>
                     </div>
                   )}

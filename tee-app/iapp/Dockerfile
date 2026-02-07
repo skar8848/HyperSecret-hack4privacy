@@ -1,11 +1,6 @@
 FROM node:22-alpine3.21
-
-RUN mkdir /app
 WORKDIR /app
-
-COPY package.json ./
+COPY package*.json ./
 RUN npm install --production
-
 COPY src/ ./src/
-
-ENTRYPOINT ["node", "/app/src/app.js"]
+ENTRYPOINT ["node", "--disable-wasm-trap-handler", "/app/src/app.js"]

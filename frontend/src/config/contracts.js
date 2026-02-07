@@ -6,7 +6,7 @@ export const IAPP_ADDRESS =
 export const FALLBACK_API =
   import.meta.env.VITE_FALLBACK_API || "http://localhost:3001";
 
-export const USDC_ADDRESS = "0xf3c3351d6bd0098eeb33ca8f830faf2a141ea2e1";
+export const USDC_ADDRESS = "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d";
 
 export const VAULT_ABI = [
   {
