@@ -2,7 +2,7 @@ const hre = require("hardhat");
 require("dotenv").config();
 
 async function main() {
-  const USDC_ARB_SEPOLIA = "0xf3c3351d6bd0098eeb33ca8f830faf2a141ea2e1";
+  const USDC_ARB_SEPOLIA = "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d";
   const TEE_REDISTRIBUTOR = process.env.TEE_WALLET_ADDRESS;
 
   if (!TEE_REDISTRIBUTOR) {

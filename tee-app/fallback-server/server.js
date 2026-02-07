@@ -20,12 +20,13 @@ if (!TEE_PRIVATE_KEY || !VAULT_ADDRESS) {
 const executions = new Map();
 
 app.post("/api/process-intent", async (req, res) => {
-  const { hlDestination, amount } = req.body;
+  const { hlDestination, destination, amount } = req.body;
+  const dest = destination || hlDestination;
 
-  if (!hlDestination || !amount) {
+  if (!dest || !amount) {
     return res
       .status(400)
-      .json({ error: "Missing hlDestination or amount" });
+      .json({ error: "Missing destination or amount" });
   }
 
   if (amount < 5) {
@@ -39,7 +40,7 @@ app.post("/api/process-intent", async (req, res) => {
   // Start execution in background
   executions.set(executionId, { status: "processing", startedAt: new Date() });
 
-  execute(TEE_PRIVATE_KEY, VAULT_ADDRESS, hlDestination, amount)
+  execute(TEE_PRIVATE_KEY, VAULT_ADDRESS, dest, amount)
     .then((result) => {
       executions.set(executionId, { status: "completed", result });
     })

@@ -2,9 +2,11 @@ const { ethers } = require("ethers");
 
 // --- Config ---
 const ARB_SEPOLIA_RPC = "https://sepolia-rollup.arbitrum.io/rpc";
-const USDC_ADDRESS = "0xf3c3351d6bd0098eeb33ca8f830faf2a141ea2e1";
+const USDC_ADDRESS = "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d";
 const HL_BRIDGE_ADDRESS = "0x08cfc1B6b2dCF36A1480b99353A354AA8AC56f89";
 const HL_TESTNET_API = "https://api.hyperliquid-testnet.xyz";
+// USDC2 is the token HL bridge actually accepts on Arb Sepolia
+const USDC2_ADDRESS = "0x1baAbB04529D43a73232B713C0FE471f7c7334d5";
 
 // --- ABIs ---
 const VAULT_ABI = [
@@ -15,6 +17,7 @@ const VAULT_ABI = [
 const ERC20_ABI = [
   "function transfer(address to, uint256 amount) external returns (bool)",
   "function balanceOf(address account) external view returns (uint256)",
+  "function approve(address spender, uint256 amount) external returns (bool)",
 ];
 
 function sleep(ms) {
@@ -28,7 +31,6 @@ function sleep(ms) {
 async function hlUsdSend(wallet, destination, amountUsd) {
   const timestamp = Date.now();
 
-  // EIP-712 domain for HL testnet
   const domain = {
     name: "HyperliquidSignTransaction",
     version: "1",
@@ -52,7 +54,6 @@ async function hlUsdSend(wallet, destination, amountUsd) {
     time: timestamp,
   };
 
-  // Sign typed data
   const signature = await wallet.signTypedData(domain, types, message);
   const { r, s, v } = ethers.Signature.from(signature);
 
@@ -122,10 +123,21 @@ async function waitForHLCredit(address, expectedAmount, maxRetries = 30) {
 /**
  * Main execution pipeline.
  * This runs inside the TEE in production (iExec iApp).
+ *
+ * The flow breaks the on-chain link between depositor and recipient:
+ * 1. TEE generates a fresh random wallet (untraceable)
+ * 2. Vault redistributes USDC to fresh wallet (TEE-authorized)
+ * 3. Fresh wallet sends USDC to user's destination address
+ *
+ * An on-chain observer sees: Vault → FreshWallet → Destination
+ * but CANNOT link it back to the original depositor.
  */
 async function execute(teePrivateKey, vaultAddress, hlDestination, amountUsdc) {
+  // Normalize address checksum
+  hlDestination = ethers.getAddress(hlDestination);
+
   console.log("\n=== PrivacyBridge TEE Execution ===");
-  console.log(`  HL Destination: ${hlDestination}`);
+  console.log(`  Destination: ${hlDestination}`);
   console.log(`  Amount: ${amountUsdc} USDC`);
 
   const provider = new ethers.JsonRpcProvider(ARB_SEPOLIA_RPC);
@@ -134,19 +146,19 @@ async function execute(teePrivateKey, vaultAddress, hlDestination, amountUsdc) {
 
   // Step 1: Generate fresh wallet
   const freshWallet = ethers.Wallet.createRandom().connect(provider);
-  console.log(`\n[1/6] Fresh wallet generated: ${freshWallet.address}`);
+  console.log(`\n[1/4] Fresh wallet generated: ${freshWallet.address}`);
 
   // Step 2: Call redistribute() on PrivacyVault
   const vault = new ethers.Contract(vaultAddress, VAULT_ABI, teeWallet);
   const amountWei = ethers.parseUnits(amountUsdc.toString(), 6);
 
-  console.log(`\n[2/6] Calling redistribute()...`);
+  console.log(`\n[2/4] Calling redistribute()...`);
   const tx1 = await vault.redistribute([freshWallet.address], [amountWei]);
   const receipt1 = await tx1.wait();
   console.log(`  Redistribute tx: ${tx1.hash} (block ${receipt1.blockNumber})`);
 
   // Step 3: Send ETH to fresh wallet for gas
-  console.log(`\n[3/6] Funding fresh wallet with ETH for gas...`);
+  console.log(`\n[3/4] Funding fresh wallet with ETH for gas...`);
   const ethForGas = ethers.parseEther("0.001");
   const tx2 = await teeWallet.sendTransaction({
     to: freshWallet.address,
@@ -162,28 +174,22 @@ async function execute(teePrivateKey, vaultAddress, hlDestination, amountUsdc) {
     `  Fresh wallet USDC: ${ethers.formatUnits(freshBalance, 6)} USDC`
   );
 
-  // Step 4: Bridge USDC to Hyperliquid (transfer to bridge contract)
-  console.log(`\n[4/6] Bridging USDC to Hyperliquid testnet...`);
-  const tx3 = await usdc.transfer(HL_BRIDGE_ADDRESS, amountWei);
+  // Step 4: Transfer USDC from fresh wallet to destination
+  // This breaks the on-chain link: observer sees Vault → Fresh → Destination
+  // but cannot link it to the original depositor
+  console.log(`\n[4/4] Sending USDC to destination ${hlDestination}...`);
+  const tx3 = await usdc.transfer(hlDestination, amountWei);
   const receipt3 = await tx3.wait();
-  console.log(`  Bridge tx: ${tx3.hash} (block ${receipt3.blockNumber})`);
-
-  // Step 5: Wait for HL to credit the fresh wallet
-  console.log(`\n[5/6] Waiting for HL bridge credit...`);
-  await waitForHLCredit(freshWallet.address, amountUsdc);
-
-  // Step 6: Transfer USDC on HL from fresh wallet to user's destination
-  console.log(`\n[6/6] Sending USDC on HL to destination...`);
-  const hlResult = await hlUsdSend(freshWallet, hlDestination, amountUsdc);
-  console.log(`  HL usdSend result:`, JSON.stringify(hlResult));
+  console.log(`  Transfer tx: ${tx3.hash} (block ${receipt3.blockNumber})`);
 
   const result = {
     success: true,
     freshWallet: freshWallet.address,
     redistributeTx: tx1.hash,
     ethFundingTx: tx2.hash,
-    bridgeTx: tx3.hash,
-    hlTransfer: hlResult,
+    transferTx: tx3.hash,
+    destination: hlDestination,
+    amount: amountUsdc,
     timestamp: new Date().toISOString(),
   };
 
@@ -200,19 +206,19 @@ if (require.main === module) {
   const teeKey = process.env.TEE_PRIVATE_KEY;
   const vaultAddr = process.env.VAULT_ADDRESS;
 
-  // Parse CLI args: node privacyBridge.js <hlDestination> <amount>
-  const hlDest = process.argv[2];
+  // Parse CLI args: node privacyBridge.js <destination> <amount>
+  const dest = process.argv[2];
   const amount = parseFloat(process.argv[3] || "5");
 
-  if (!teeKey || !vaultAddr || !hlDest) {
+  if (!teeKey || !vaultAddr || !dest) {
     console.error(
-      "Usage: node privacyBridge.js <hlDestination> <amountUSDC>"
+      "Usage: node privacyBridge.js <destinationAddress> <amountUSDC>"
     );
     console.error("Required env: TEE_PRIVATE_KEY, VAULT_ADDRESS");
     process.exit(1);
   }
 
-  execute(teeKey, vaultAddr, hlDest, amount).catch((err) => {
+  execute(teeKey, vaultAddr, dest, amount).catch((err) => {
     console.error("Execution failed:", err);
     process.exit(1);
   });

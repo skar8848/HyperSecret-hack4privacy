@@ -1,24 +1,23 @@
-# PrivacyBridge - Hackathon iExec TEE
+# PrivacyBridge (Aled) - iExec Hackathon
 
 ## TL;DR
 
-App de depot anonyme sur Hyperliquid via iExec TEE sur Arbitrum. L'utilisateur depose USDC dans un vault on-chain, soumet un intent chiffre (adresse HL destination) au TEE. Le TEE genere des wallets frais, redistribue, bridge vers HL, et transfere les fonds. Personne ne peut lier le depot initial a l'adresse HL finale.
+App de transfert anonyme de USDC sur Arbitrum Sepolia via iExec TEE (SGX/SCONE). L'utilisateur depose USDC dans un vault on-chain, soumet un intent chiffre au TEE. Le TEE genere un wallet frais, redistribue les USDC, et les transfere a la destination. Personne ne peut lier le depot initial a l'adresse finale.
 
 ---
 
 ## Le Concept
 
 ```
-Exemple concret:
-1. Alice depose 20 USDC dans PrivacyVault sur Arbitrum Sepolia
-2. Alice soumet son intent chiffre au TEE: "envoie a 0xMonAdresseHL"
+1. Alice depose 5 USDC dans PrivacyVault sur Arbitrum Sepolia
+2. Alice soumet son intent chiffre au TEE: "envoie a 0xBob"
 3. Le TEE (dans l'enclave SGX):
    - Genere un wallet frais 0xFresh42...
-   - Appelle redistribute() → 20 USDC vont a 0xFresh42
-   - 0xFresh42 envoie les USDC au bridge HL
-   - Sur HL, transfere de 0xFresh42 vers 0xMonAdresseHL
-4. Alice retrouve ses 20 USDC sur Hyperliquid
-5. Personne ne peut prouver le lien Alice → 0xMonAdresseHL
+   - Appelle redistribute() → 5 USDC vont a 0xFresh42
+   - Envoie 0.001 ETH a 0xFresh42 pour le gas
+   - 0xFresh42 transfere les USDC a 0xBob
+4. Bob recoit 5 USDC
+5. On-chain: Vault → 0xFresh42 → 0xBob (impossible de lier a Alice)
 ```
 
 ---
@@ -26,35 +25,49 @@ Exemple concret:
 ## Architecture
 
 ```
-User (Arbitrum Sepolia)           iExec TEE (SGX Enclave)              Hyperliquid Testnet
-┌──────────────────────┐     ┌────────────────────────────┐     ┌───────────────────────┐
-│ 1. Approve USDC      │     │ 3. Decrypt intent           │     │                       │
-│ 2. Deposit to Vault  │────>│ 4. Generate fresh wallet    │     │                       │
-│    + submit intent   │     │ 5. Call redistribute()      │     │                       │
-│    (chiffre via      │     │ 6. Fund fresh wallet ETH    │     │                       │
-│     iExec SDK)       │     │ 7. Bridge USDC → HL         │────>│ 8. USDC credited      │
-│                      │     │ 8. usdSend → user HL addr   │────>│    to user's address  │
-└──────────────────────┘     └────────────────────────────┘     └───────────────────────┘
+User (Arbitrum Sepolia)           iExec TEE (SGX Enclave)
+┌──────────────────────┐     ┌────────────────────────────┐
+│ 1. Approve USDC      │     │ 3. Decrypt intent           │
+│ 2. Deposit to Vault  │────>│ 4. Generate fresh wallet    │
+│    + submit intent   │     │ 5. Call redistribute()      │
+│    (chiffre via      │     │ 6. Fund fresh wallet ETH    │
+│     iExec SDK)       │     │ 7. Transfer USDC → dest     │
+└──────────────────────┘     └────────────────────────────┘
 ```
+
+---
+
+## Adresses Deployees (Arbitrum Sepolia)
+
+| Element | Adresse |
+|---------|---------|
+| **PrivacyVault** | `0x36f6DcDd2200Fd3d044351A545635AC8F39ee1E7` |
+| **iApp (iExec)** | `0x00944931c04C52159F9060dA4C7F0caa73c418Af` |
+| **TEE Wallet** | `0xf308D795A3635d443A99B28438936ea9036dD6b5` |
+| **Deployer** | `0xF4c09A9121dd457E3947Aa8971AB37ef35e920C2` |
+| **USDC (Circle)** | `0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d` |
+| **Docker Image** | `skar88/iexec-hack:y-tee-scone-5.9.1-v16-prod-00b8578bd425` |
+
+| Config | Valeur |
+|--------|--------|
+| **Chain** | Arbitrum Sepolia (421614) |
+| **RPC** | `https://sepolia-rollup.arbitrum.io/rpc` |
+| **iExec Chain** | `arbitrum-sepolia-testnet` |
+| **USDC Faucet** | `https://faucet.circle.com/` (20 USDC / 2h) |
+| **ETH Faucet** | `https://faucets.chain.link/arbitrum-sepolia` |
+| **RLC Faucet** | `https://explorer.iex.ec/arbitrum-sepolia-testnet/faucet` |
 
 ---
 
 ## Etat du Projet
 
-### Ce qui est FAIT (tout le code est ecrit et compile)
-- [x] **PrivacyVault.sol** — Contrat Solidity, 7/7 tests Hardhat passing
-- [x] **privacyBridge.js** — Script standalone TEE (redistribute → bridge → usdSend HL)
-- [x] **iApp wrapper** — Wrapper iExec qui lit IEXEC_REQUESTER_SECRET + IEXEC_APP_DEVELOPER_SECRET
-- [x] **Dockerfile** — Pour deployer l'iApp sur iExec
-- [x] **Frontend React** — 3 pages (Deposit, Intent, Status) avec wagmi + iExec SDK
-- [x] **Fallback server** — Express API si le workerpool iExec est down
-
-### Ce qui RESTE A FAIRE
-- [ ] **Deployer PrivacyVault** sur Arbitrum Sepolia
-- [ ] **Tester le bridge HL** avec le script standalone
-- [ ] **Deployer l'iApp** sur iExec (`iapp deploy`)
-- [ ] **Test E2E** complet
-- [ ] **Styling frontend** (le code est fonctionnel mais moche)
+- [x] PrivacyVault.sol deploye (7/7 tests Hardhat)
+- [x] Script standalone TEE teste (4-step flow)
+- [x] Fallback server teste E2E
+- [x] Frontend E2E test passe (deposit → fallback → transfer)
+- [x] iApp deployee sur iExec TEE (arbitrum-sepolia-testnet)
+- [x] iApp run reussi sur worker SGX (5 USDC transferes via TEE)
+- [x] Frontend mode iExec (default, deploiable sur Vercel)
 
 ---
 
@@ -64,210 +77,151 @@ User (Arbitrum Sepolia)           iExec TEE (SGX Enclave)              Hyperliqu
 privacy-bridge/
 ├── contracts/                          # Hardhat project
 │   ├── contracts/
-│   │   ├── PrivacyVault.sol            # Vault principal (deposit, redistribute, emergencyWithdraw)
+│   │   ├── PrivacyVault.sol            # Vault (deposit, redistribute, emergencyWithdraw)
 │   │   └── MockUSDC.sol                # Mock pour tests locaux
 │   ├── scripts/
-│   │   └── deploy.js                   # Script de deploiement Arb Sepolia
-│   ├── test/
-│   │   └── PrivacyVault.test.js        # 7 tests
-│   ├── hardhat.config.js
-│   └── package.json
+│   │   ├── deploy.js                   # Deploiement Arb Sepolia
+│   │   ├── deposit.js                  # Script utilitaire pour deposer
+│   │   └── check-balances.js           # Verifier les balances
+│   └── test/
+│       └── PrivacyVault.test.js        # 7 tests
 │
 ├── tee-app/
 │   ├── standalone/
-│   │   ├── privacyBridge.js            # Logique TEE complete (testable en CLI)
-│   │   └── package.json
+│   │   └── privacyBridge.js            # Logique TEE standalone (4-step flow)
 │   ├── iapp/
 │   │   ├── src/
-│   │   │   └── app.js                  # Meme logique wrappee pour iExec
+│   │   │   └── app.js                  # iExec iApp entry point
 │   │   ├── Dockerfile
-│   │   └── package.json
+│   │   ├── package.json
+│   │   └── iapp.config.json            # Config iapp CLI (gitignored, contient secrets)
 │   └── fallback-server/
-│       ├── server.js                   # Express API fallback
-│       └── package.json
+│       └── server.js                   # Express API fallback
 │
 ├── frontend/                           # React + Vite + wagmi
 │   ├── src/
-│   │   ├── App.jsx                     # Router + providers (wagmi, react-query)
-│   │   ├── main.jsx
+│   │   ├── App.jsx                     # Router + providers
 │   │   ├── config/
 │   │   │   ├── wagmi.js                # Config chain Arbitrum Sepolia
-│   │   │   └── contracts.js            # ABIs + adresses (a mettre a jour apres deploy)
+│   │   │   └── contracts.js            # ABIs + adresses (via env vars)
 │   │   └── components/
+│   │       ├── BridgeWidget.jsx        # *** COMPOSANT PRINCIPAL ***
 │   │       ├── ConnectButton.jsx       # Wallet connect/disconnect
-│   │       ├── DepositPage.jsx         # Approve + deposit USDC dans le vault
-│   │       ├── IntentPage.jsx          # Soumettre intent via iExec SDK ou fallback
-│   │       └── StatusPage.jsx          # Poller le status + afficher les tx proofs
-│   ├── .env.example
-│   └── package.json
+│   │       ├── ElasticSlider.jsx       # Slider anime (gas price)
+│   │       ├── Plasma.jsx              # Background WebGL
+│   │       ├── StaggeredMenu.jsx       # Menu hamburger anime
+│   │       ├── ResourcesPage.jsx       # Page ressources
+│   │       ├── TeamPage.jsx            # Page equipe
+│   │       └── ProfileCard.jsx         # Carte profil
+│   └── .env
 │
-└── CLAUDE.md                           # Ce fichier
+├── .gitignore
+└── CLAUDE.md
 ```
 
 ---
 
-## Adresses & Config Testnet
+## Smart Contract - PrivacyVault.sol
 
-| Element | Valeur |
-|---------|--------|
-| **Chain** | Arbitrum Sepolia |
-| **Chain ID** | 421614 |
-| **RPC** | `https://sepolia-rollup.arbitrum.io/rpc` |
-| **USDC** | `0xf3c3351d6bd0098eeb33ca8f830faf2a141ea2e1` (6 decimals) |
-| **HL Bridge** | `0x08cfc1B6b2dCF36A1480b99353A354AA8AC56f89` |
-| **HL API Testnet** | `https://api.hyperliquid-testnet.xyz` |
-| **USDC Faucet** | `https://faucet.circle.com/` (20 USDC / 2h) |
-| **ETH Faucet** | `https://faucets.chain.link/arbitrum-sepolia` |
-| **HL Faucet** | `https://app.hyperliquid-testnet.xyz/drip` (1000 USDC / 4h, need mainnet account) |
+3 fonctions principales:
 
-### Adresses deployees (A REMPLIR)
-- **PrivacyVault**: `___________________________________`
-- **TEE Wallet**: `___________________________________`
-- **iApp Address**: `___________________________________`
+1. `deposit(uint256 amount)` — User depose USDC (min 5 USDC). Necessite `approve()` avant.
+2. `redistribute(address[] recipients, uint256[] amounts)` — **TEE only** (REDISTRIBUTOR_ROLE). Envoie les USDC du vault vers les wallets frais.
+3. `emergencyWithdraw()` — Le user recupere tout son depot si le TEE est down.
+
+Constructeur: `(address _usdc, address _redistributor)`.
 
 ---
 
-## Comment le Smart Contract marche
+## TEE Flow (4 etapes)
 
-**PrivacyVault.sol** — 3 fonctions principales:
-
-1. `deposit(uint256 amount)` — User depose USDC (min 5 USDC). Necessite un `approve()` avant.
-2. `redistribute(address[] recipients, uint256[] amounts)` — **TEE only** (REDISTRIBUTOR_ROLE via OpenZeppelin AccessControl). Envoie les USDC du vault vers les wallets frais.
-3. `emergencyWithdraw()` — Safety net. Le user recupere tout son depot si le TEE est down.
-
-Le constructeur prend `(address _usdc, address _redistributor)`. Le `_redistributor` est l'adresse du TEE wallet.
-
----
-
-## Comment le TEE marche
-
-**Le script standalone** (`tee-app/standalone/privacyBridge.js`) fait:
+Le script (`tee-app/standalone/privacyBridge.js` et `tee-app/iapp/src/app.js`):
 
 ```
 Step 1: Generate fresh wallet (ethers.Wallet.createRandom)
-Step 2: Call redistribute() on vault → USDC sent to fresh wallet
-Step 3: Send 0.001 ETH to fresh wallet (for gas)
-Step 4: Fresh wallet calls usdc.transfer(HL_BRIDGE, amount) → bridge to HL
-Step 5: Poll HL API until fresh wallet is credited (~60s)
-Step 6: Sign EIP-712 usdSend on HL → transfer from fresh wallet to user's HL destination
+Step 2: Call redistribute() on vault → USDC envoyé au fresh wallet
+Step 3: Send 0.001 ETH au fresh wallet (pour le gas)
+Step 4: Fresh wallet transfere USDC à la destination
 ```
 
-**L'iApp wrapper** (`tee-app/iapp/src/app.js`) fait exactement pareil mais:
-- Lit l'intent depuis `IEXEC_REQUESTER_SECRET_1` (env var injectee par iExec)
-- Lit la private key TEE depuis `IEXEC_APP_DEVELOPER_SECRET`
-- Ecrit le resultat dans `IEXEC_OUT/result.json` + `computed.json`
-
-### HL usdSend — EIP-712 Signing
-
-Le transfer USDC sur Hyperliquid utilise EIP-712 typed data:
-- Domain: `{ name: "HyperliquidSignTransaction", version: "1", chainId: 421614 }`
-- Type: `HyperliquidTransaction:UsdSend` avec `hyperliquidChain: "Testnet"`
-- POST vers `https://api.hyperliquid-testnet.xyz/exchange`
-- `signatureChainId: "0x66eee"` (421614 en hex)
+L'iApp lit:
+- `IEXEC_REQUESTER_SECRET_1`: JSON `{ destination, amount, vaultAddress }`
+- `IEXEC_APP_DEVELOPER_SECRET`: TEE wallet private key
+- Ecrit `IEXEC_OUT/result.json` + `computed.json`
 
 ---
 
-## Comment le Frontend marche
+## Frontend
 
-3 pages React avec wagmi:
+**BridgeWidget.jsx** est le composant principal (~1030 lignes). Il integre tout:
 
-1. **DepositPage** — `useWriteContract` pour approve USDC puis deposit dans le vault
-2. **IntentPage** — 2 modes:
-   - **iExec**: push requester secret → fetch app order + workerpool order → match orders → get taskId
-   - **Fallback**: POST vers `http://localhost:3001/api/process-intent`
-3. **StatusPage** — Polle le status (iExec task.show ou fallback /api/status/:id) et affiche les tx hashes avec liens Arbiscan
+### Flow Bridge (4 etapes visuelles)
+1. **Approve USDC** → `usdc.approve(vault, amount)`
+2. **Deposit to Vault** → `vault.deposit(amount)`
+3. **Submit Intent to TEE** → iExec SDK (push secret, match orders) ou fallback
+4. **Anonymous Transfer** → poll task status, fetch result.json depuis IPFS
 
-Le fichier `frontend/src/config/contracts.js` contient les ABIs et adresses. **Il faut mettre a jour VAULT_ADDRESS et IAPP_ADDRESS** apres deploiement (via .env ou directement dans le fichier).
+### Mode iExec (defaut)
+Le SDK iExec tourne dans le browser via MetaMask:
+- `iexec.secrets.pushRequesterSecret("1", secretJSON)`
+- `iexec.orderbook.fetchAppOrderbook(IAPP_ADDRESS)`
+- `iexec.order.createRequestorder({ tag: ["tee", "scone"] })`
+- `iexec.order.matchOrders()`
+- `iexec.task.show(taskId)` pour polling
+- `iexec.task.fetchResults(taskId)` + JSZip pour extraire result.json
 
----
+### Mode Fallback
+POST vers `FALLBACK_API/api/process-intent`, poll via `/api/status/:id`.
 
-## Guide de Deploiement Pas a Pas
+### Settings Panel
+- Execution: iExec TEE (defaut) / Fallback
+- Route Priority: Fastest / Best Return
+- Gas Price: slider 1-100 gwei
 
-### Pre-requis
-- Node.js >= 18
-- Un wallet avec ETH sur Arbitrum Sepolia (faucet: https://faucets.chain.link/arbitrum-sepolia)
-- USDC testnet (faucet: https://faucet.circle.com/)
-- Un compte Hyperliquid mainnet (pour le faucet testnet)
-- Docker (pour l'iApp)
-
-### Etape 1: Installer les deps
-```bash
-cd privacy-bridge/contracts && npm install
-cd ../tee-app/standalone && npm install
-cd ../fallback-server && npm install   # npm install express cors ethers dotenv
-cd ../../frontend && npm install
+### Deploiement Vercel
+Framework: Vite, Root Directory: `frontend`, Output: `dist`
 ```
-
-### Etape 2: Generer le TEE wallet
-```bash
-cd contracts
-node -e "const {Wallet}=require('ethers'); const w=Wallet.createRandom(); console.log('Address:', w.address); console.log('Private Key:', w.privateKey)"
-```
-**Sauvegarder l'adresse et la private key!** L'adresse sera le REDISTRIBUTOR du vault. Funder cette adresse avec ~0.05 ETH sur Arb Sepolia.
-
-### Etape 3: Deployer le contrat
-```bash
-cd contracts
-# Creer .env:
-# DEPLOYER_PRIVATE_KEY=0x_ta_private_key
-# TEE_WALLET_ADDRESS=0x_adresse_du_step2
-npx hardhat run scripts/deploy.js --network arbitrumSepolia
-```
-**Noter l'adresse du contrat deploye.**
-
-### Etape 4: Tester le script standalone
-```bash
-cd tee-app/standalone
-# Creer .env:
-# TEE_PRIVATE_KEY=0x_private_key_du_step2
-# VAULT_ADDRESS=0x_adresse_du_step3
-
-# D'abord un user doit deposer du USDC dans le vault (via frontend ou script)
-# Puis:
-node privacyBridge.js 0xTON_ADRESSE_HL 5
-```
-
-### Etape 5: Deployer l'iApp (iExec)
-```bash
-npm i -g @iexec/iapp
-cd tee-app/iapp
-iapp init    # ou configurer manuellement
-iapp test    # test local
-iapp deploy --chain arbitrum-sepolia-testnet
-```
-Docs iExec: https://docs.iex.ec/guides/build-iapp/deploy-&-run
-
-### Etape 6: Lancer le frontend
-```bash
-cd frontend
-# Creer .env:
-# VITE_VAULT_ADDRESS=0x_adresse_du_step3
-# VITE_IAPP_ADDRESS=0x_adresse_du_step5
-# VITE_FALLBACK_API=http://localhost:3001
-npm run dev
-```
-
-### Etape 7 (optionnel): Lancer le fallback server
-```bash
-cd tee-app/fallback-server
-# Le .env est le meme que standalone:
-# TEE_PRIVATE_KEY=0x...
-# VAULT_ADDRESS=0x...
-npm start
-# Ecoute sur port 3001
+VITE_VAULT_ADDRESS=0x36f6DcDd2200Fd3d044351A545635AC8F39ee1E7
+VITE_IAPP_ADDRESS=0x00944931c04C52159F9060dA4C7F0caa73c418Af
 ```
 
 ---
 
-## Points d'Attention / Gotchas
+## Dependencies Frontend
 
-1. **Min deposit HL = 5 USDC** — En dessous les fonds sont perdus pour toujours
-2. **USDC a 6 decimals** — `5 USDC = 5_000_000` en wei, pas `5 * 10^18`
-3. **Le bridge HL prend ~60s** — Le script poll toutes les 5s pendant 2.5 min max
-4. **Fresh wallets need ETH** — Le TEE envoie 0.001 ETH a chaque fresh wallet pour le gas du bridge
-5. **iExec workerpool** — Peut etre lent/down. Le fallback server permet de demo quand meme
-6. **EIP-712 HL signing** — Le `signatureChainId` est `"0x66eee"` (421614 hex). Si ca match pas, le usdSend echoue silencieusement
-7. **Le contrat track les deposits par user** — C'est un compromis: ca permet emergencyWithdraw mais ca leak un peu de privacy. En prod on pourrait retirer ce mapping.
+| Package | Usage |
+|---------|-------|
+| react ^19 | UI |
+| wagmi ^3 + viem ^2 | Wallet + contracts |
+| iexec ^8 | iExec SDK (secrets, orders, task tracking) |
+| @tanstack/react-query ^5 | Data fetching |
+| motion ^12 | Animations |
+| gsap ^3 | Menu animations |
+| ogl ^1 | WebGL background |
+| jszip ^3 | Extraction resultats iExec |
+
+---
+
+## Charte Graphique
+
+| Element | Valeur |
+|---------|--------|
+| Accent | `#B0F2B6` (vert menthe) |
+| Background widget | `rgba(18, 18, 20, 0.92)` + `blur(24px)` |
+| Font | Satoshi (variable) |
+| Error | `#ff4444` |
+| Warning | `#ffb900` |
+
+---
+
+## Points d'Attention
+
+1. **USDC = 6 decimals** — `5 USDC = 5_000_000`, pas `5 * 10^18`
+2. **Min 5 USDC** — Le vault exige un minimum de 5 USDC
+3. **Fresh wallets need ETH** — Le TEE envoie 0.001 ETH a chaque fresh wallet pour le gas
+4. **iExec coute 0.1 RLC par run** — Claim des RLC gratuits sur le faucet
+5. **iapp.config.json contient des secrets** — Gitignored, ne jamais commit
+6. **Address checksum** — Toujours normaliser avec `ethers.getAddress()` avant utilisation
 
 ---
 
@@ -277,35 +231,7 @@ npm start
 |-----------|------|
 | Smart Contract | Solidity 0.8.20, Hardhat, OpenZeppelin 5.x |
 | TEE Logic | Node.js, ethers.js v6 |
-| iExec TEE | iApp Generator (`@iexec/iapp`), Docker, SGX/TDX |
-| Frontend | React 19, Vite, wagmi, viem, @tanstack/react-query, iexec SDK |
+| iExec TEE | @iexec/iapp CLI, Docker, SGX/SCONE |
+| Frontend | React 19, Vite 7, wagmi, viem, iExec SDK |
 | Fallback | Express.js |
-| Chain | Arbitrum Sepolia (testnet) |
-| Bridge | Hyperliquid Testnet |
-
----
-
-## Fichiers Cles a Modifier
-
-Si tu dois changer la logique:
-
-| Quoi | Fichier |
-|------|---------|
-| Logique du vault (deposit/redistribute) | `contracts/contracts/PrivacyVault.sol` |
-| Flow TEE (bridge, split, shuffle) | `tee-app/standalone/privacyBridge.js` |
-| iApp secrets/outputs | `tee-app/iapp/src/app.js` |
-| Adresses deployees | `frontend/src/config/contracts.js` ou `frontend/.env` |
-| Config wagmi/chain | `frontend/src/config/wagmi.js` |
-| UI deposit | `frontend/src/components/DepositPage.jsx` |
-| UI intent submission | `frontend/src/components/IntentPage.jsx` |
-| UI status tracking | `frontend/src/components/StatusPage.jsx` |
-
----
-
-## Ameliorations Possibles (si temps)
-
-- **Batching**: Accumuler plusieurs intents et les traiter ensemble (meilleure privacy)
-- **Split & Shuffle**: Au lieu de 1 fresh wallet par user, splitter en N montants differents avec des delays
-- **Remove deposit tracking**: Retirer le mapping `deposits` pour plus de privacy (mais perd emergencyWithdraw)
-- **Multi-chain**: Supporter d'autres destinations que Hyperliquid
-- **Fancier frontend**: Animations, dark mode, progres visuel du bridge
+| Chain | Arbitrum Sepolia |
