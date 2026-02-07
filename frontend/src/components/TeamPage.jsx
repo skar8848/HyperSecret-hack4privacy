@@ -14,11 +14,17 @@ export default function TeamPage() {
       <div className="team-grid">
         <ProfileCard
           avatarUrl={pfpLeft}
-          onContactClick={() => window.open("#", "_blank")}
+          name="skar88"
+          twitter="https://x.com/0xhaizeka"
+          linkedin="https://www.linkedin.com/in/albanderouin/"
+          telegram="https://t.me/haizeka88"
         />
         <ProfileCard
           avatarUrl={pfpRight}
-          onContactClick={() => window.open("#", "_blank")}
+          name="Aiden"
+          twitter="https://x.com/aiden_7788"
+          linkedin="https://www.linkedin.com/in/adrian-verdes/"
+          telegram="https://t.me/aiden_7788"
         />
       </div>
     </div>

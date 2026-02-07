@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 import {
   useAccount,
   useConnect,
+  useChainId,
   useReadContract,
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi";
+import { arbitrumSepolia } from "wagmi/chains";
 import { parseUnits, formatUnits } from "viem";
 import {
   VAULT_ADDRESS,
@@ -57,6 +59,8 @@ const STEPS = [
 export default function BridgeWidget() {
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
+  const chainId = useChainId();
+  const isWrongChain = isConnected && chainId !== arbitrumSepolia.id;
 
   // UI state
   const [activeTab, setActiveTab] = useState("bridge");
@@ -414,6 +418,8 @@ export default function BridgeWidget() {
         onClick: () => connect({ connector: connectors[0] }),
       };
     }
+    if (isWrongChain)
+      return { text: "Switch to Arbitrum Sepolia", disabled: true, variant: "secondary" };
     if (!amount || parseFloat(amount) === 0)
       return { text: "Enter an amount", disabled: true, variant: "secondary" };
     if (parseFloat(amount) < 5)
