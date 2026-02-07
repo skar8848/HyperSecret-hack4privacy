@@ -219,7 +219,11 @@ export default function BridgeWidget() {
           vaultAddress: VAULT_ADDRESS,
         });
 
-        await iexec.secrets.pushRequesterSecret("1", secretValue);
+        // Push secret (force update if it already exists)
+        const secretExists = await iexec.secrets.checkRequesterSecretExists("1");
+        await iexec.secrets.pushRequesterSecret("1", secretValue, {
+          forceUpdate: secretExists,
+        });
 
         const { orders: appOrders } =
           await iexec.orderbook.fetchAppOrderbook(IAPP_ADDRESS);
