@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { FALLBACK_API } from "../config/contracts";
+import { FALLBACK_API, IEXEC_HUB_ADDRESS } from "../config/contracts";
 
 const IEXEC_STATUS_MAP = {
   0: "UNSET",
@@ -19,7 +19,10 @@ export default function StatusPage({ taskId }) {
   const pollIExec = useCallback(async (id) => {
     try {
       const { IExec } = await import("iexec");
-      const iexec = new IExec({ ethProvider: window.ethereum });
+      const iexec = new IExec(
+        { ethProvider: window.ethereum },
+        { hubAddress: IEXEC_HUB_ADDRESS }
+      );
       const task = await iexec.task.show(id);
 
       setStatusData({
