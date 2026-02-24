@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAccount } from "wagmi";
-import { IAPP_ADDRESS, FALLBACK_API } from "../config/contracts";
+import { IAPP_ADDRESS, IEXEC_HUB_ADDRESS, FALLBACK_API } from "../config/contracts";
 
 export default function IntentPage({ onTaskCreated }) {
   const { isConnected } = useAccount();
@@ -18,7 +18,10 @@ export default function IntentPage({ onTaskCreated }) {
     try {
       // Dynamic import to avoid loading iexec if not needed
       const { IExec } = await import("iexec");
-      const iexec = new IExec({ ethProvider: window.ethereum });
+      const iexec = new IExec(
+        { ethProvider: window.ethereum },
+        { hubAddress: IEXEC_HUB_ADDRESS }
+      );
 
       // Push requester secret
       const secretValue = JSON.stringify({
@@ -35,11 +38,15 @@ export default function IntentPage({ onTaskCreated }) {
       const appOrder = appOrders[0]?.order;
       if (!appOrder) throw new Error("No app order available");
 
-      // Fetch workerpool order
+      // Fetch workerpool order (must match tee,scone tag)
       const { orders: wpOrders } =
-        await iexec.orderbook.fetchWorkerpoolOrderbook({ category: 0 });
+        await iexec.orderbook.fetchWorkerpoolOrderbook({
+          category: 0,
+          tag: ["tee", "scone"],
+        });
       const workerpoolOrder = wpOrders[0]?.order;
-      if (!workerpoolOrder) throw new Error("No workerpool order available");
+      if (!workerpoolOrder)
+        throw new Error("No TEE workerpool order available (tee,scone)");
 
       // Create request order
       const requestOrderToSign = await iexec.order.createRequestorder({
