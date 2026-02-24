@@ -7,6 +7,9 @@ export const FALLBACK_API =
 // USDC2 on Arb Sepolia (= USDC on mainnet). Accepted by HL bridge.
 export const USDC_ADDRESS = "0x1baAbB04529D43a73232B713C0FE471f7c7334d5";
 
+// iExec PoCo hub on Arbitrum Sepolia
+export const IEXEC_HUB_ADDRESS = "0xB2157BF2fAb286b2A4170E3491Ac39770111Da3E";
+
 export const VAULT_ABI = [
   {
     inputs: [{ name: "amount", type: "uint256" }],
