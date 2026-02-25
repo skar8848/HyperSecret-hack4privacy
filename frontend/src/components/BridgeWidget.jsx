@@ -13,6 +13,7 @@ import {
   VAULT_ADDRESS,
   USDC_ADDRESS,
   IAPP_ADDRESS,
+  IEXEC_HUB_ADDRESS,
   FALLBACK_API,
   VAULT_ABI,
   ERC20_ABI,
@@ -231,7 +232,10 @@ export default function BridgeWidget() {
         setTrackPolling(true);
       } else {
         const { IExec } = await import("iexec");
-        const iexec = new IExec({ ethProvider: window.ethereum });
+        const iexec = new IExec(
+          { ethProvider: window.ethereum },
+          { hubAddress: IEXEC_HUB_ADDRESS }
+        );
 
         const secretValue = JSON.stringify({
           destination: hlDestination,
@@ -245,8 +249,6 @@ export default function BridgeWidget() {
           await iexec.secrets.pushRequesterSecret(secretIndex, secretValue);
         } catch (e) {
           if (!e.message?.includes("already exists")) throw e;
-          console.warn("Secret index collision, retrying...");
-          // Extremely unlikely but handle gracefully
           const retryIndex = (Date.now() + 1).toString();
           await iexec.secrets.pushRequesterSecret(retryIndex, secretValue);
         }
@@ -257,9 +259,12 @@ export default function BridgeWidget() {
         if (!appOrder) throw new Error("No app order available");
 
         const { orders: wpOrders } =
-          await iexec.orderbook.fetchWorkerpoolOrderbook({ category: 0 });
+          await iexec.orderbook.fetchWorkerpoolOrderbook({
+            category: 0,
+            minTag: ["tee", "scone"],
+          });
         const workerpoolOrder = wpOrders[0]?.order;
-        if (!workerpoolOrder) throw new Error("No workerpool order");
+        if (!workerpoolOrder) throw new Error("No TEE workerpool order (tee,scone)");
 
         const requestOrderToSign = await iexec.order.createRequestorder({
           app: IAPP_ADDRESS,
@@ -320,7 +325,10 @@ export default function BridgeWidget() {
         }
       } else {
         const { IExec } = await import("iexec");
-        const iexec = new IExec({ ethProvider: window.ethereum });
+        const iexec = new IExec(
+          { ethProvider: window.ethereum },
+          { hubAddress: IEXEC_HUB_ADDRESS }
+        );
         const task = await iexec.task.show(trackId);
 
         const statusText = IEXEC_STATUS_MAP[task.status] || `UNKNOWN(${task.status})`;
