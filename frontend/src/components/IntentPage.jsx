@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAccount } from "wagmi";
-import { IAPP_ADDRESS, IEXEC_HUB_ADDRESS, FALLBACK_API } from "../config/contracts";
+import { IAPP_ADDRESS, IEXEC_HUB_ADDRESS, VAULT_ADDRESS, FALLBACK_API } from "../config/contracts";
 
 export default function IntentPage({ onTaskCreated }) {
   const { isConnected } = useAccount();
@@ -23,14 +23,21 @@ export default function IntentPage({ onTaskCreated }) {
         { hubAddress: IEXEC_HUB_ADDRESS }
       );
 
-      // Push requester secret
+      // Push requester secret with dynamic index (secrets are immutable)
+      const secretIndex = Date.now().toString();
       const secretValue = JSON.stringify({
         hlDestination,
         amount: parseFloat(amount),
-        vaultAddress: import.meta.env.VITE_VAULT_ADDRESS,
+        vaultAddress: VAULT_ADDRESS,
       });
 
-      await iexec.secrets.pushRequesterSecret("1", secretValue);
+      try {
+        await iexec.secrets.pushRequesterSecret(secretIndex, secretValue);
+      } catch (e) {
+        if (!e.message?.includes("already exists")) throw e;
+        const retryIndex = (Date.now() + 1).toString();
+        await iexec.secrets.pushRequesterSecret(retryIndex, secretValue);
+      }
 
       // Fetch app order
       const { orders: appOrders } =
@@ -45,8 +52,7 @@ export default function IntentPage({ onTaskCreated }) {
           tag: ["tee", "scone"],
         });
       const workerpoolOrder = wpOrders[0]?.order;
-      if (!workerpoolOrder)
-        throw new Error("No TEE workerpool order available (tee,scone)");
+      if (!workerpoolOrder) throw new Error("No TEE workerpool order (tee,scone)");
 
       // Create request order
       const requestOrderToSign = await iexec.order.createRequestorder({
@@ -58,7 +64,7 @@ export default function IntentPage({ onTaskCreated }) {
         volume: 1,
         tag: ["tee", "scone"],
         params: {
-          iexec_secrets: { 1: "1" },
+          iexec_secrets: { 1: secretIndex },
         },
       });
 
