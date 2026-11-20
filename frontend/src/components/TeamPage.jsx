@@ -23,7 +23,6 @@ export default function TeamPage() {
           avatarUrl={pfpRight}
           name="Aiden"
           twitter="https://x.com/aiden_7788"
-          linkedin=""
           telegram="https://t.me/aiden_7788"
         />
       </div>
